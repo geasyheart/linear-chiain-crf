@@ -1,3 +1,7 @@
+# 说明
+
+添加一些个人笔记，从代码层面深度理解。
+
 # linear-chain-crf
 Linear-chain CRF in PyTorch.
 
