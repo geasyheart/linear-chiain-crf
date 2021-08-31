@@ -133,17 +133,25 @@ class CRF(nn.Module):
         # save first and last tags to be used later
         first_tags = tags[:, 0]
         last_valid_idx = mask.int().sum(1) - 1
+        # 从原tensor中获取指定dim和指定index的数据，（嘿嘿，还是这个比较正式）
         last_tags = tags.gather(1, last_valid_idx.unsqueeze(1)).squeeze()
 
-        # add the transition from BOS to the first tags for each batch
+        # #################################################################################
+        # 拿到bos到第一个tag的状态转移概率
         t_scores = self.transitions[self.BOS_TAG_ID, first_tags]
+        # #################################################################################
 
-        # add the [unary] emission scores for the first tags for each batch
-        # for all batches, the first word, see the correspondent emissions
-        # for the first tags (which is a list of ids):
-        # emissions[:, 0, [tag_1, tag_2, ..., tag_nblabels]]
+        # #################################################################################
+        # emissions[:, 0]的维度为（2,6），2表示batch_size, 其中6表示所有tag的概率分布，如下：
+        # tensor([[-0.1295,  0.1159, -0.3350,  0.3373,  0.3511,  0.2872],
+        #         [-0.0745,  0.0489, -0.3753,  0.3178,  0.2725,  0.2371]],
+        #        grad_fn=<SelectBackward>)
+        # gather后就是取真实tag所在的index
+        # tensor([[0.3373],
+        #         [0.3178]], grad_fn=<GatherBackward>)
+        # 拿到发射概率
         e_scores = emissions[:, 0].gather(1, first_tags.unsqueeze(1)).squeeze()
-
+        # #################################################################################
         # the scores for a word is just the sum of both scores
         scores += e_scores + t_scores
 
@@ -159,6 +167,7 @@ class CRF(nn.Module):
             current_tags = tags[:, i]
 
             # calculate emission and transition scores as we did before
+            # 同理，剩下的sequence进行遍历，拿到对应位置的发射概率和状态转移概率
             e_scores = emissions[:, i].gather(1, current_tags.unsqueeze(1)).squeeze()
             t_scores = self.transitions[previous_tags, current_tags]
 
@@ -187,6 +196,11 @@ class CRF(nn.Module):
         batch_size, seq_length, nb_labels = emissions.shape
 
         # in the first iteration, BOS will have all the scores
+        # self.transitions[self.BOS_TAG_ID, :] 获取BOS位置
+        # emissions[:, 0]表示第一个字位置
+        # alphas: (2, 6) 2个batch,6个tag
+        # self.transitions[self.BOS_TAG_ID, :].unsqueeze(0): (1, 6)
+        # emissions[:, 0]                                  : (2, 6)
         alphas = self.transitions[self.BOS_TAG_ID, :].unsqueeze(0) + emissions[:, 0]
 
         for i in range(1, seq_length):
@@ -195,18 +209,23 @@ class CRF(nn.Module):
             for tag in range(nb_labels):
 
                 # get the emission for the current tag
+                # 获取当前tag的发射概率
                 e_scores = emissions[:, i, tag]
 
                 # broadcast emission to all labels
                 # since it will be the same for all previous tags
                 # (bs, nb_labels)
+                # shape: (2, 1)
                 e_scores = e_scores.unsqueeze(1)
 
                 # transitions from something to our tag
+                # 获取其他到当前tag的转移概率
                 t_scores = self.transitions[:, tag]
 
+                # 广播
                 # broadcast the transition scores to all batches
                 # (bs, nb_labels)
+                # shape: (1, 6)
                 t_scores = t_scores.unsqueeze(0)
 
                 # combine current scores with previous alphas
